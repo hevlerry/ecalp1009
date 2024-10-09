@@ -13,6 +13,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from .models import Rating
 from .forms import ProfileForm, RatingForm
+from django.db.models import Avg, Count
 
 def logout_view(request):
     logout(request)
@@ -36,6 +37,7 @@ def post_product(request):
         form = PostProductForm()
     return render(request, 'post_product.html', {'form': form})
 
+
 @login_required
 def profile(request, pk):
     if pk is None:
@@ -46,6 +48,9 @@ def profile(request, pk):
 
     # Move the ratings query to the top
     ratings = Rating.objects.filter(rated_user=user)
+
+    # Calculate the summary ratings
+    average_rating, star_equivalent_average_rating, num_ratings = get_rating_summary(ratings)
 
     if request.method == 'POST':
         if is_owner:
@@ -64,6 +69,8 @@ def profile(request, pk):
                 messages.success(request, 'Your review has been submitted successfully!')
                 # Refresh the ratings query to include the newly submitted rating
                 ratings = Rating.objects.filter(rated_user=user)
+                # Recalculate the summary ratings
+                average_rating, star_equivalent_average_rating, num_ratings = get_rating_summary(ratings)
 
     if is_owner:
         edit_form = ProfileForm(instance=profile)
@@ -74,8 +81,25 @@ def profile(request, pk):
 
     products = Product.objects.filter(user=user, is_active=True)
 
-    # Pass ratings to the template context in all cases
-    return render(request, 'profile.html', {'products': products, 'edit_form': edit_form, 'rating_form': rating_form, 'user': user, 'is_owner': is_owner, 'ratings': ratings})
+    # Pass ratings and summary ratings to the template context in all cases
+    return render(request, 'profile.html',
+                  {'products': products, 'edit_form': edit_form, 'rating_form': rating_form, 'user': user,
+                   'is_owner': is_owner, 'ratings': ratings, 'average_rating': average_rating,
+                   'star_equivalent_average_rating': star_equivalent_average_rating, 'num_ratings': num_ratings})
+
+def get_rating_summary(ratings):
+    if ratings:
+        average_rating = sum(rating.rating for rating in ratings) / len(ratings)
+        if average_rating is not None:
+            star_equivalent_average_rating = round(average_rating, 1)  # assuming 1 decimal place
+        else:
+            star_equivalent_average_rating = None
+        num_ratings = len(ratings)
+    else:
+        average_rating = None
+        star_equivalent_average_rating = None
+        num_ratings = 0
+    return average_rating, star_equivalent_average_rating, num_ratings
 
 @login_required
 def delete_listing(request, pk):
